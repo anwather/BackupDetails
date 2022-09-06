@@ -38,7 +38,7 @@ $backupResults = Search-AzGraph -Query $backupQuery -First 1000
 
 $vaultStorageTypes = @{}
 
-($backupResults | Select-Object -Unique recoveryServicesVault).recoveryServicesVault | ForEach-Object {
+($backupResults | Where backedup -eq "true" | Select-Object -Unique recoveryServicesVault).recoveryServicesVault | ForEach-Object {
     $subscription = $_.Split('/')[2]
     $resourceGroupName = $_.Split('/')[4]
     $rsName = $_.Split('/')[-1]
@@ -53,7 +53,7 @@ $backupResults | ForEach-Object {
 }
 
 $backupResults | Foreach-Object {
-    if ($_.backedUp) {
+    if ($_.backedUp -eq "true") {
         $_ | Add-Member -MemberType NoteProperty -Name StorageType -Value $vaultStorageTypes[$_.recoveryServicesVault] -Force
         $_ | Add-Member -MemberType NoteProperty -Name RSV_Subscription -Value $subscriptionHash[$_.recoveryServicesVault.Split("/")[2]] -Force
     }
@@ -80,11 +80,9 @@ $storageHash = @{}
 
 function ValidateEnvironment {
     Param($StorageType, $Environment)
-    $npEnvironments = @("Production", "Development", "Non Production", "Test", "Staging", "Lab (Sandpit)", "Lab (Playpen)", "Training", "Test/Staging", "Pre-Production", "Pre-Production DR", "Sandpit", "UAT", "Integration")
-    $prEnvironments = @("Production")
     switch ($StorageType) {
-        "LocallyRedundant" { if ($Environment -notin $npEnvironments) { return $true } else { return $false } }
-        "GeoRedundant" { if ($Environment -notin $prEnvironments) { return $true } else { return $false } }
+        "LocallyRedundant" { if ($Environment -notmatch "DR$|-NONPROD$") { return $true } else { return $false } }
+        "GeoRedundant" { if ($Environment -notmatch "-PROD$") { return $true } else { return $false } }
         "ZoneRedundant" { if ($Environment -notin $prEnvironments) { return $true } else { return $false } }
         default { return $true }
     }
@@ -93,7 +91,7 @@ function ValidateEnvironment {
 $backupResults | Foreach-Object {
     if ($_.backedUp -eq "true") {
         $_ | Add-Member -MemberType NoteProperty -Name StorageConsumedInGBs -Value $storageHash[$_.VM_Name] -Force
-        $_ | Add-Member -MemberType NoteProperty -Name Validate -Value (ValidateEnvironment -StorageType $_.StorageType -Environment $_.Environment) -Force
+        $_ | Add-Member -MemberType NoteProperty -Name Validate -Value (ValidateEnvironment -StorageType $_.StorageType -Environment $_.RSV_Subscription) -Force
     } 
 }
 
