@@ -37,14 +37,22 @@ resources
 $backupResults = Search-AzGraph -Query $backupQuery -First 1000
 
 $vaultStorageTypes = @{}
+$vaultCRREnabled = @{}
 
-($backupResults | Where backedup -eq "true" | Select-Object -Unique recoveryServicesVault).recoveryServicesVault | ForEach-Object {
+($backupResults | Where-Object backedup -eq "true" | Select-Object -Unique recoveryServicesVault).recoveryServicesVault | ForEach-Object {
     $subscription = $_.Split('/')[2]
     $resourceGroupName = $_.Split('/')[4]
     $rsName = $_.Split('/')[-1]
     $uri = "https://management.azure.com/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.RecoveryServices/vaults/{2}/backupstorageconfig/vaultstorageconfig?api-version=2018-12-20" -f $subscription, $resourceGroupName, $rsName
     $storageType = ((Invoke-AzRestMethod -Uri $uri).Content | ConvertFrom-Json).properties.storageType
     $vaultStorageTypes.Add($_, $storageType)
+    if ($storageType -eq "GeoRedundant") {
+        $crrEnabled = ((Invoke-AzRestMethod -Uri $uri).Content | ConvertFrom-Json).properties.crossRegionRestoreFlag
+        $vaultCRREnabled.Add($_, $crrEnabled)
+    }
+    else {
+        $vaultCRREnabled.Add($_, "Not Supported")
+    }
 }
 
 $backupResults | ForEach-Object {
@@ -56,6 +64,7 @@ $backupResults | Foreach-Object {
     if ($_.backedUp -eq "true") {
         $_ | Add-Member -MemberType NoteProperty -Name StorageType -Value $vaultStorageTypes[$_.recoveryServicesVault] -Force
         $_ | Add-Member -MemberType NoteProperty -Name RSV_Subscription -Value $subscriptionHash[$_.recoveryServicesVault.Split("/")[2]] -Force
+        $_ | Add-Member -MemberType NoteProperty -Name CrrEnabled -Value $vaultCRREnabled[$_.recoveryServicesVault] -Force
     }
 }
 
